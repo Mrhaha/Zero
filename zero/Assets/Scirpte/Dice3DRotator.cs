@@ -19,6 +19,8 @@ public class Dice3DRotator : MonoBehaviour
 
     [Header("Result")]
     public int faceValue = 1; // 1..6，记录当前对齐的结果点数
+    public System.Action<Dice3DRotator> OnAligned; // 对齐完成回调（一次性）
+    private bool alignedEventPending = false;
 
     void Awake()
     {
@@ -60,6 +62,7 @@ public class Dice3DRotator : MonoBehaviour
         targetRotation = q;
         aligning = true;
         isRotating = false;
+        alignedEventPending = true;
     }
 
     void Update()
@@ -79,6 +82,11 @@ public class Dice3DRotator : MonoBehaviour
             {
                 transform.rotation = targetRotation;
                 aligning = false;
+                if (alignedEventPending)
+                {
+                    alignedEventPending = false;
+                    var cb = OnAligned; if (cb != null) cb(this);
+                }
             }
         }
         CurrentSpeedAbs = Mathf.Abs(currentAngularSpeed);

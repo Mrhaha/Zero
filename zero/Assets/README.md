@@ -93,6 +93,28 @@ Setup steps:
 - Overlay (TotalShown): a fullscreen semi-transparent black panel (fade-in) with centered total text.
 - Fonts use `LegacyRuntime.ttf` to avoid modern Unity’s Arial.ttf removal.
 
+## Audio (SFX)
+
+- Fields on `DiceManager`:
+  - Enable flags: `enableSfx`, `enableLoop`, `enableTick`, `enablePressSfx`.
+  - Clips: `clipStart`, `clipLoop`, `clipTick[]`, `clipStop`, `clipReveal`, `clipPress`.
+  - Mixer: `sfxMixer` (optional AudioMixerGroup for unified routing/limiting).
+  - Volumes/pitch: `volumeMaster`, `volumeLoop`, `volumeTick`, `volumeOneShot`, `loopPitchMin/Max`.
+  - Tick timing: `tickBaseInterval`, `tickMinInterval`, `tickSpeedScale`, `tickPitchJitter`.
+  - `spatialBlend` for 2D/3D sound, and `loopFadeOutTime`.
+
+- Lifecycle:
+  - StartShaking: plays `clipStart` (one-shot), starts `clipLoop` (looped, volume/pitch follow speed).
+  - Shaking: emits `clipTick` by speed-driven cadence; optional `clipPress` on space.
+  - StopAndReveal: fades out loop, plays `clipStop`.
+  - ShowTotal: plays `clipReveal`.
+
+- Audio Mixer setup (recommended):
+  1. Create an AudioMixer (Project: right-click → Create → Audio Mixer), add a group named `SFX`.
+  2. (Optional) Add a Limiter/Compressor on `SFX` to avoid clipping; adjust bus volume.
+  3. In Unity menu `Tools → Dice → Audio Setup...`, drag the `SFX` group into the window and click “Assign To Scene”.
+  4. Alternatively, set `DiceManager.sfxMixer` manually and ensure per-die `AudioSource` route to that group.
+
 ## Configuration (Inspector)
 
 - Dice Settings

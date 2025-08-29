@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Audio;
 
 public class DiceManager : MonoBehaviour
 {
@@ -61,6 +62,36 @@ public class DiceManager : MonoBehaviour
 
     public enum DefaultSkin { Classic, Dark, Candy, Neon }
 
+    [Header("Audio SFX")]
+    public bool enableSfx = true;
+    public bool enableLoop = true;
+    public bool enableTick = true;
+    public bool enablePressSfx = false;
+    public AudioClip clipStart;
+    public AudioClip clipLoop;
+    public AudioClip[] clipTick;
+    public AudioClip clipStop;
+    public AudioClip clipReveal;
+    public AudioClip clipPress;
+    public AudioMixerGroup sfxMixer;
+    [Range(0f,1f)] public float volumeMaster = 1f;
+    [Range(0f,1f)] public float volumeLoop = 0.25f;
+    [Range(0f,1f)] public float volumeTick = 0.35f;
+    [Range(0f,1f)] public float volumeOneShot = 0.6f;
+    public float loopPitchMin = 0.9f;
+    public float loopPitchMax = 1.2f;
+    [Range(0f,1f)] public float spatialBlend = 0f; // 0=2D,1=3D
+    public float tickBaseInterval = 0.25f;
+    public float tickMinInterval = 0.08f;
+    public float tickSpeedScale = 1.0f;
+    public float tickPitchJitter = 0.08f;
+    public float loopFadeOutTime = 0.3f;
+
+    private AudioSource oneShotSource;
+    private AudioSource[] diceAudio; // per-die source for loop/tick
+    private float tickTimer = 0f;
+    private bool loopFading = false;
+
     // Note: Bootstrap removed. Attach DiceManager manually to a scene object.
 
     void Start()
@@ -68,6 +99,17 @@ public class DiceManager : MonoBehaviour
         if (use3D) CreateDiceRow3D(); else CreateDiceRow2D();
         CreateUI();
         UpdateStatusText();
+        // Prepare one-shot audio source
+        if (enableSfx)
+        {
+            oneShotSource = gameObject.GetComponent<AudioSource>();
+            if (oneShotSource == null) oneShotSource = gameObject.AddComponent<AudioSource>();
+            oneShotSource.playOnAwake = false;
+            oneShotSource.loop = false;
+            oneShotSource.spatialBlend = 0f;
+            oneShotSource.dopplerLevel = 0f;
+            if (sfxMixer != null) oneShotSource.outputAudioMixerGroup = sfxMixer;
+        }
     }
 
     void Update()
@@ -80,6 +122,12 @@ public class DiceManager : MonoBehaviour
                 // 摇动阶段：空格增加能量，加速
                 spinEnergy = Mathf.Min(maxEnergy, spinEnergy + energyPerPress);
                 lastPressTime = Time.time;
+                // Press SFX
+                if (enableSfx && enablePressSfx && clipPress != null && oneShotSource != null)
+                {
+                    oneShotSource.pitch = 1f;
+                    oneShotSource.PlayOneShot(clipPress, volumeMaster * Mathf.Min(0.6f, volumeOneShot * 0.6f));
+                }
             }
             else
             {
@@ -91,6 +139,11 @@ public class DiceManager : MonoBehaviour
                 {
                     spinEnergy = Mathf.Min(maxEnergy, spinEnergy + energyPerPress);
                     lastPressTime = Time.time;
+                    if (enableSfx && enablePressSfx && clipPress != null && oneShotSource != null)
+                    {
+                        oneShotSource.pitch = 1f;
+                        oneShotSource.PlayOneShot(clipPress, volumeMaster * Mathf.Min(0.6f, volumeOneShot * 0.6f));
+                    }
                 }
             }
         }
@@ -147,6 +200,56 @@ public class DiceManager : MonoBehaviour
         // 摇动阶段：自然停下（能量耗尽且角速度接近0）后切换到显示结果
         if (currentStage == Stage.Shaking)
         {
+            // Loop SFX gain/pitch follow speed factor
+            if (enableSfx && enableLoop && clipLoop != null && diceAudio != null)
+            {
+                float eff = EffectiveSpeedFactor(spinEnergy);
+                float tPitch = Mathf.InverseLerp(0f, Mathf.Max(0.01f, nonLinearA), eff);
+                float pitch = Mathf.Lerp(loopPitchMin, loopPitchMax, tPitch);
+                float vol = volumeMaster * volumeLoop * Mathf.Clamp01(eff / Mathf.Max(0.01f, nonLinearA));
+                for (int i = 0; i < diceAudio.Length; i++)
+                {
+                    var src = diceAudio[i];
+                    if (src == null) continue;
+                    if (!src.isPlaying)
+                    {
+                        src.clip = clipLoop;
+                        src.loop = true;
+                        src.volume = 0f;
+                        src.pitch = pitch;
+                        src.Play();
+                    }
+                    src.pitch = pitch;
+                    src.volume = vol;
+                }
+                loopFading = false; // actively driving loop
+            }
+
+            // Tick SFX (tempo scales with speed)
+            if (enableSfx && enableTick && clipTick != null && clipTick.Length > 0)
+            {
+                float eff = EffectiveSpeedFactor(spinEnergy);
+                float interval = tickBaseInterval / (1f + eff * Mathf.Max(0f, tickSpeedScale));
+                interval = Mathf.Max(tickMinInterval, interval);
+                tickTimer -= Time.deltaTime;
+                if (tickTimer <= 0f)
+                {
+                    tickTimer = interval;
+                    // choose source & clip
+                    AudioSource src = (diceAudio != null && diceAudio.Length > 0) ? diceAudio[Random.Range(0, diceAudio.Length)] : oneShotSource;
+                    if (src != null)
+                    {
+                        var clip = clipTick[Random.Range(0, clipTick.Length)];
+                        float jitter = 1f + Random.Range(-tickPitchJitter, tickPitchJitter);
+                        float vol = volumeMaster * volumeTick;
+                        float oldPitch = src.pitch;
+                        src.pitch = Mathf.Clamp(jitter, 0.5f, 2f);
+                        src.PlayOneShot(clip, vol);
+                        src.pitch = oldPitch;
+                    }
+                }
+            }
+
             bool shouldStop = false;
             if (spinEnergy <= 0.0001f)
             {
@@ -183,11 +286,51 @@ public class DiceManager : MonoBehaviour
             {
                 StopAndReveal();
                 currentStage = Stage.Revealed;
+                revealTimer = Mathf.Max(0f, revealToTotalDelay);
                 UpdateStatusText();
             }
             else
             {
                 UpdateStatusText();
+            }
+        }
+
+        // Loop fade-out when not in shaking
+        if (enableSfx && (currentStage != Stage.Shaking) && diceAudio != null)
+        {
+            if (!loopFading)
+            {
+                loopFading = true;
+            }
+            float step = (loopFadeOutTime > 0f) ? Time.deltaTime / loopFadeOutTime : 1f;
+            for (int i = 0; i < diceAudio.Length; i++)
+            {
+                var src = diceAudio[i];
+                if (src == null) continue;
+                if (src.isPlaying)
+                {
+                    src.volume = Mathf.Max(0f, src.volume - step * volumeMaster * volumeLoop);
+                    if (src.volume <= 0.001f)
+                    {
+                        src.Stop();
+                        src.clip = null;
+                    }
+                }
+            }
+        }
+
+        // 结果阶段：延时自动进入总数显示
+        if (currentStage == Stage.Revealed)
+        {
+            if (revealTimer > 0f)
+            {
+                revealTimer -= Time.deltaTime;
+                if (revealTimer <= 0f)
+                {
+                    ShowTotal();
+                    currentStage = Stage.TotalShown;
+                    UpdateStatusText();
+                }
             }
         }
 
@@ -213,6 +356,9 @@ public class DiceManager : MonoBehaviour
     private Stage currentStage = Stage.Ready;
     private int[] currentFaces; // 存当前各骰子的点数，用于求和
     private float shakingTimer = 0f; // 作为“自然停止”的缓冲计时（2D）
+    private float revealTimer = 0f;  // 结果阶段到总数阶段的自动延迟
+    [Header("Stage Timing")]
+    public float revealToTotalDelay = 1.0f; // 停止后显示点数，延迟该时间后自动展示总数
 
     private void NextStage()
     {
@@ -244,6 +390,13 @@ public class DiceManager : MonoBehaviour
         shakingTimer = 0.5f; // 缓冲计时
         // 若能量为0，给极小初速以便开始旋转反馈
         if (spinEnergy <= 0f) spinEnergy = Mathf.Min(maxEnergy, energyPerPress * 0.5f);
+        AllowDiceAudio();
+        // Start SFX
+        if (enableSfx && clipStart != null && oneShotSource != null)
+        {
+            oneShotSource.pitch = 1f;
+            oneShotSource.PlayOneShot(clipStart, volumeMaster * volumeOneShot);
+        }
         if (!use3D)
         {
             if (rotators != null)
@@ -266,6 +419,14 @@ public class DiceManager : MonoBehaviour
     private void StopAndReveal()
     {
         isRotating = false;
+        // 强制静音骰子相关音效
+        HardMuteDiceAudio();
+        // Begin loop fade and play stop SFX
+        if (enableSfx && clipStop != null && oneShotSource != null)
+        {
+            oneShotSource.pitch = 1f;
+            oneShotSource.PlayOneShot(clipStop, volumeMaster * volumeOneShot);
+        }
         if (!use3D)
         {
             if (rotators != null)
@@ -295,6 +456,9 @@ public class DiceManager : MonoBehaviour
                 {
                     var r3 = rotators3D[i];
                     if (r3 == null) continue;
+                    // 订阅对齐事件
+                    r3.OnAligned -= OnDieAligned;
+                    r3.OnAligned += OnDieAligned;
                     r3.SetRotating(false);
                     int face = Random.Range(1, 7);
                     currentFaces[i] = face;
@@ -304,8 +468,27 @@ public class DiceManager : MonoBehaviour
         }
     }
 
+    private int alignedCount = 0;
+    private void OnDieAligned(Dice3DRotator r)
+    {
+        alignedCount++;
+        // 对齐点击音（可重用 stop/或 tick clip）
+        if (enableSfx && oneShotSource != null)
+        {
+            AudioClip c = clipStop != null ? clipStop : (clipTick != null && clipTick.Length > 0 ? clipTick[0] : null);
+            if (c != null)
+            {
+                float vol = volumeMaster * Mathf.Min(volumeOneShot, 0.5f);
+                oneShotSource.pitch = 1f + Random.Range(-0.05f, 0.05f);
+                oneShotSource.PlayOneShot(c, vol);
+            }
+        }
+    }
+
     private void ShowTotal()
     {
+        // 二次保险：显示总数前确保全部骰子音效关闭
+        HardMuteDiceAudio();
         if (currentFaces == null || currentFaces.Length == 0) return;
         int sum = 0; foreach (var f in currentFaces) sum += f;
         string msg = $"本次结果：\n{string.Join(" ", currentFaces)}\n\n总数：{sum}\n\n按空格重新开始";
@@ -326,10 +509,16 @@ public class DiceManager : MonoBehaviour
         {
             statusText.text = ""; // 避免与覆盖层文字重复
         }
+        if (enableSfx && clipReveal != null && oneShotSource != null)
+        {
+            oneShotSource.pitch = 1f;
+            oneShotSource.PlayOneShot(clipReveal, volumeMaster * volumeOneShot);
+        }
     }
 
     private void ResetRound()
     {
+        alignedCount = 0;
         currentFaces = null;
         // 隐藏覆盖层
         if (overlayImage != null)
@@ -369,6 +558,29 @@ public class DiceManager : MonoBehaviour
                 }
         }
         if (statusText != null) statusText.text = "按空格开始摇动";
+    }
+
+    private void HardMuteDiceAudio()
+    {
+        loopFading = false;
+        tickTimer = 0f;
+        if (diceAudio != null)
+        {
+            for (int i = 0; i < diceAudio.Length; i++)
+            {
+                var src = diceAudio[i];
+                if (src == null) continue;
+                if (src.isPlaying) src.Stop();
+                src.clip = null;
+                src.volume = 0f;
+            }
+        }
+    }
+
+    private void AllowDiceAudio()
+    {
+        loopFading = false;
+        tickTimer = 0f;
     }
 
     private void CreateDiceRow()
@@ -528,7 +740,7 @@ public class DiceManager : MonoBehaviour
                 statusText.text = "阶段：摇动中（按空格加速，松开自然停）";
                 break;
             case Stage.Revealed:
-                statusText.text = "阶段：结果已生成\n提示：按空格显示总数";
+                statusText.text = $"阶段：结果已生成\n即将显示总数（{Mathf.CeilToInt(Mathf.Max(0f, revealTimer))}s）";
                 break;
             case Stage.TotalShown:
                 // ShowTotal 已经写入包含总数的文本
@@ -640,6 +852,7 @@ public class DiceManager : MonoBehaviour
         faceSprites = SelectSkinSprites();
         rotators = new DiceRotator[diceCount];
         renderers = new SpriteRenderer[diceCount];
+        diceAudio = new AudioSource[diceCount];
 
         float totalWidth = (diceCount - 1) * spacing;
         float startX = -totalWidth / 2f;
@@ -670,6 +883,18 @@ public class DiceManager : MonoBehaviour
                 ghost.source = sr;
                 ghost.active = false;
             }
+
+            // Per-die audio source (optional)
+            if (enableSfx)
+            {
+                var src = dice.AddComponent<AudioSource>();
+                src.playOnAwake = false;
+                src.loop = false; // we'll control loop manually
+                src.spatialBlend = spatialBlend;
+                src.dopplerLevel = 0f;
+                if (sfxMixer != null) src.outputAudioMixerGroup = sfxMixer;
+                diceAudio[i] = src;
+            }
         }
     }
 
@@ -678,6 +903,7 @@ public class DiceManager : MonoBehaviour
         faceSprites = SelectSkinSprites();
         rotators3D = new Dice3DRotator[diceCount];
         dice3D = new GameObject[diceCount];
+        diceAudio = new AudioSource[diceCount];
 
         float totalWidth = (diceCount - 1) * spacing;
         float startX = -totalWidth / 2f;
@@ -699,6 +925,18 @@ public class DiceManager : MonoBehaviour
             rot3.SetAxis(axis);
             rotators3D[i] = rot3;
             dice3D[i] = root;
+
+            // Per-die audio source
+            if (enableSfx)
+            {
+                var src = root.AddComponent<AudioSource>();
+                src.playOnAwake = false;
+                src.loop = false; // start loop clip manually
+                src.spatialBlend = spatialBlend;
+                src.dopplerLevel = 0f;
+                if (sfxMixer != null) src.outputAudioMixerGroup = sfxMixer;
+                diceAudio[i] = src;
+            }
         }
     }
 

@@ -375,7 +375,7 @@ MonoBehaviour:
   diceSize: 1
   rotationSpeed: 240
   use3D: 1
-  defaultSkin: 3
+  defaultSkin: 2
   skinAsset: {fileID: 0}
   axisJitter: 0.15
   axisMinY: 0.2
@@ -400,6 +400,30 @@ MonoBehaviour:
   enableGhostTrail: 1
   enableFlip: 1
   exaggerationCartoon: 1
+  enableSfx: 1
+  enableLoop: 1
+  enableTick: 1
+  enablePressSfx: 0
+  clipStart: {fileID: 8300000, guid: eb1137db649cd284aaf2315cd9bbf5d9, type: 3}
+  clipLoop: {fileID: 8300000, guid: 72b8bbf82a2ae7b41a4f7e9a78434b07, type: 3}
+  clipTick: []
+  clipStop: {fileID: 0}
+  clipReveal: {fileID: 0}
+  clipPress: {fileID: 0}
+  sfxMixer: {fileID: 0}
+  volumeMaster: 1
+  volumeLoop: 0.25
+  volumeTick: 0.35
+  volumeOneShot: 0.6
+  loopPitchMin: 0.9
+  loopPitchMax: 1.2
+  spatialBlend: 0
+  tickBaseInterval: 0.25
+  tickMinInterval: 0.08
+  tickSpeedScale: 1
+  tickPitchJitter: 0.08
+  loopFadeOutTime: 0.3
+  revealToTotalDelay: 1
 --- !u!4 &716289220
 Transform:
   m_ObjectHideFlags: 0
