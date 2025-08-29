@@ -12,6 +12,7 @@ public class DiceManager : MonoBehaviour
     public bool use3D = true; // 使用3D骰子
     public DefaultSkin defaultSkin = DefaultSkin.Dark; // 下拉选择内置皮肤
     public DiceSkin skinAsset;               // 可直接拖入自定义 ScriptableObject 皮肤
+    public Material faceMaterial;            // URP 材质模板（建议：URP/Unlit 或 URP/Lit），用于3D面片
 
     private DiceRotator[] rotators;              // 2D用
     private SpriteRenderer[] renderers;          // 2D用
@@ -993,12 +994,20 @@ public class DiceManager : MonoBehaviour
             if (col != null) Destroy(col);
 
             var mr = quad.GetComponent<MeshRenderer>();
-            var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-            if (faces != null && faces.Length >= 6)
+            // Assign a URP-compatible material template if provided to avoid pink in Player builds
+            if (faceMaterial != null)
             {
-                mat.mainTexture = faces[i].texture;
+                mr.sharedMaterial = faceMaterial;
             }
-            mr.sharedMaterial = mat;
+            // Use MaterialPropertyBlock to set face texture per quad
+            var mpb = new MaterialPropertyBlock();
+            if (faces != null && faces.Length >= 6 && faces[i] != null)
+            {
+                var tex = faces[i].texture;
+                mpb.SetTexture("_BaseMap", tex);
+                mpb.SetTexture("_MainTex", tex); // fallback for non-URP shaders
+            }
+            mr.SetPropertyBlock(mpb);
         }
     }
 

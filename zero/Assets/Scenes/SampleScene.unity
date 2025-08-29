@@ -377,6 +377,7 @@ MonoBehaviour:
   use3D: 1
   defaultSkin: 2
   skinAsset: {fileID: 0}
+  faceMaterial: {fileID: 2100000, guid: c1504c6a7a3c6f241ab59dd2c2e7acdf, type: 2}
   axisJitter: 0.15
   axisMinY: 0.2
   lockSimilarDirection: 1

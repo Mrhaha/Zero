@@ -124,6 +124,7 @@ Setup steps:
 
 - 3D Axis Settings
   - `cameraDotLimit`: exclude axes near camera forward (smaller = more planar spin).
+  - `faceMaterial`: assign a URP material (Unlit/Lit) to avoid pink materials in builds.
 
 - Spacebar Control
   - `energyPerPress`, `maxEnergy`.
